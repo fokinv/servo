@@ -28,7 +28,7 @@ pub struct NodeList {
 
 impl NodeList {
     #[allow(unrooted_must_root)]
-    fn new_inherited(list_type: NodeListType) -> NodeList {
+    pub fn new_inherited(list_type: NodeListType) -> NodeList {
         NodeList {
             reflector_: Reflector::new(),
             list_type: list_type,
@@ -36,14 +36,12 @@ impl NodeList {
     }
 
     #[allow(unrooted_must_root)]
-    pub fn new(window: &Window,
-               list_type: NodeListType) -> Root<NodeList> {
+    pub fn new(window: &Window, list_type: NodeListType) -> Root<NodeList> {
         reflect_dom_object(box NodeList::new_inherited(list_type),
                            GlobalRef::Window(window), NodeListBinding::Wrap)
     }
 
-    pub fn new_simple_list<T>(window: &Window, iter: T)
-                              -> Root<NodeList>
+    pub fn new_simple_list<T>(window: &Window, iter: T) -> Root<NodeList>
                               where T: Iterator<Item=Root<Node>> {
         NodeList::new(window, NodeListType::Simple(iter.map(|r| JS::from_rooted(&r)).collect()))
     }
@@ -93,6 +91,10 @@ impl NodeList {
             panic!("called as_children_list() on a simple node list")
         }
     }
+
+    pub fn get_list_type(&self) -> &NodeListType {
+        &self.list_type
+    }
 }
 
 #[derive(JSTraceable, HeapSizeOf)]
@@ -105,13 +107,17 @@ pub struct ChildrenList {
 }
 
 impl ChildrenList {
-    fn new(node: &Node) -> ChildrenList {
+    pub fn new(node: &Node) -> ChildrenList {
         let last_visited = node.GetFirstChild();
         ChildrenList {
             node: JS::from_ref(node),
             last_visited: MutNullableHeap::new(last_visited.r()),
             last_index: Cell::new(0u32),
         }
+    }
+
+    pub fn get_parent_node(&self) -> &Node {
+        &*self.node
     }
 
     pub fn len(&self) -> u32 {
