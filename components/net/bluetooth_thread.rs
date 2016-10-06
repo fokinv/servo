@@ -21,10 +21,6 @@ use std::time::Duration;
 use tinyfiledialogs;
 use util::thread::spawn_named;
 
-const ADAPTER_ERROR: &'static str = "No adapter found";
-
-const ADAPTER_NOT_POWERED_ERROR: &'static str = "Bluetooth adapter not powered";
-
 // A transaction not completed within 30 seconds shall time out. Such a transaction shall be considered to have failed.
 // https://www.bluetooth.org/DocMan/handlers/DownloadDoc.ashx?doc_id=286439 (Vol. 3, page 480)
 const MAXIMUM_TRANSACTION_TIME: u8 = 30;
@@ -65,11 +61,11 @@ macro_rules! get_adapter_or_return_error(
         match $bl_manager.get_or_create_adapter() {
             Some(adapter) => {
                 if !adapter.is_powered().unwrap_or(false) {
-                    return drop($sender.send(Err(BluetoothError::Type(ADAPTER_NOT_POWERED_ERROR.to_string()))))
+                    return drop($sender.send(Err(BluetoothError::NotFound)))
                 }
                 adapter
             },
-            None => return drop($sender.send(Err(BluetoothError::Type(ADAPTER_ERROR.to_string())))),
+            None => return drop($sender.send(Err(BluetoothError::NotFound))),
         }
     );
 );
@@ -726,7 +722,7 @@ impl BluetoothManager {
         }
         let mut adapter = match self.get_or_create_adapter() {
             Some(a) => a,
-            None => return drop(sender.send(Err(BluetoothError::Type(ADAPTER_ERROR.to_string())))),
+            None => return drop(sender.send(Err(BluetoothError::NotFound))),
         };
         let device = {
             let device_id = match self.service_to_device.get(service_id.as_str()) {
@@ -766,7 +762,7 @@ impl BluetoothManager {
         }
         let mut adapter = match self.get_or_create_adapter() {
             Some(a) => a,
-            None => return drop(sender.send(Err(BluetoothError::Type(ADAPTER_ERROR.to_string())))),
+            None => return drop(sender.send(Err(BluetoothError::NotFound))),
         };
         let device = {
             let device_id = match self.service_to_device.get(service_id.as_str()) {
