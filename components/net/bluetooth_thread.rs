@@ -696,7 +696,10 @@ impl BluetoothManager {
         }
         let mut services_vec = vec!();
         for service in services {
-            if service.is_primary().unwrap_or(false) {
+            if service.is_primary().unwrap_or(false) &&
+            self.allowed_services
+                .get(&device_id)
+                .map_or(false, |s| s.contains(&service.get_uuid().unwrap_or("".to_owned()))) {
                 if let Ok(uuid) = service.get_uuid() {
                     services_vec.push(BluetoothServiceMsg {
                                           uuid: uuid,
