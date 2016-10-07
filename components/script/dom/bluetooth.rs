@@ -4,11 +4,12 @@
 
 use bluetooth_blacklist::{Blacklist, uuid_is_blacklisted};
 use core::clone::Clone;
+use dom::bindings::cell::DOMRefCell;
 use dom::bindings::codegen::Bindings::BluetoothBinding::{self, BluetoothMethods, BluetoothRequestDeviceFilter};
 use dom::bindings::codegen::Bindings::BluetoothBinding::RequestDeviceOptions;
 use dom::bindings::error::Error::{self, Security, Type, NotFound};
 use dom::bindings::error::Fallible;
-use dom::bindings::js::Root;
+use dom::bindings::js::{JS, MutHeap, Root};
 use dom::bindings::reflector::{Reflectable, Reflector, reflect_dom_object};
 use dom::bindings::str::DOMString;
 use dom::bluetoothadvertisingdata::BluetoothAdvertisingData;
@@ -20,6 +21,7 @@ use ipc_channel::ipc::{self, IpcSender};
 use js::conversions::ToJSValConvertible;
 use net_traits::bluetooth_scanfilter::{RequestDeviceoptions, ScanFilter, ScanFilterSequence, ServiceUUIDSequence};
 use net_traits::bluetooth_thread::{BluetoothError, BluetoothMethodMsg};
+use std::collections::HashMap;
 use std::rc::Rc;
 
 const FILTER_EMPTY_ERROR: &'static str = "'filters' member, if present, must be nonempty to find any devices.";
@@ -41,12 +43,14 @@ const OPTIONS_ERROR: &'static str = "Fields of 'options' conflict with each othe
 #[dom_struct]
 pub struct Bluetooth {
     reflector_: Reflector,
+    device_instance_map: DOMRefCell<HashMap<String, MutHeap<JS<BluetoothDevice>>>>,
 }
 
 impl Bluetooth {
     pub fn new_inherited() -> Bluetooth {
         Bluetooth {
             reflector_: Reflector::new(),
+            device_instance_map: DOMRefCell::new(HashMap::new()),
         }
     }
 
@@ -101,15 +105,20 @@ impl Bluetooth {
         // Step 12-13.
         match device {
             Ok(device) => {
+                if let Some(existing_device) = self.device_instance_map.borrow().get(&device.id.clone()) {
+                    return Ok(existing_device.get());
+                }
                 let global = self.global();
                 let ad_data = BluetoothAdvertisingData::new(&global,
                                                             device.appearance,
                                                             device.tx_power,
                                                             device.rssi);
-                Ok(BluetoothDevice::new(&global,
-                                        DOMString::from(device.id),
-                                        device.name.map(DOMString::from),
-                                        &ad_data))
+                let bt_device = BluetoothDevice::new(&global,
+                                                     DOMString::from(device.id.clone()),
+                                                     device.name.map(DOMString::from),
+                                                     &ad_data);
+                self.device_instance_map.borrow_mut().insert(device.id, MutHeap::new(&bt_device));
+                Ok(bt_device)
             },
             Err(error) => {
                 Err(Error::from(error))
