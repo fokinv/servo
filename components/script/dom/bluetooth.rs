@@ -18,8 +18,7 @@ use dom::globalscope::GlobalScope;
 use dom::promise::Promise;
 use ipc_channel::ipc::{self, IpcSender};
 use js::conversions::ToJSValConvertible;
-use net_traits::bluetooth_scanfilter::{BluetoothScanfilter, BluetoothScanfilterSequence};
-use net_traits::bluetooth_scanfilter::{RequestDeviceoptions, ServiceUUIDSequence};
+use net_traits::bluetooth_scanfilter::{RequestDeviceoptions, ScanFilter, ScanFilterSequence, ServiceUUIDSequence};
 use net_traits::bluetooth_thread::{BluetoothError, BluetoothMethodMsg};
 use std::rc::Rc;
 
@@ -158,12 +157,12 @@ fn convert_request_device_options(filters: &Option<Vec<BluetoothRequestDeviceFil
         }
     }
 
-    Ok(RequestDeviceoptions::new(BluetoothScanfilterSequence::new(uuid_filters),
+    Ok(RequestDeviceoptions::new(ScanFilterSequence::new(uuid_filters),
                                  ServiceUUIDSequence::new(optional_services_uuids)))
 }
 
 // https://webbluetoothcg.github.io/web-bluetooth/#request-bluetooth-devices
-fn canonicalize_filter(filter: &BluetoothRequestDeviceFilter) -> Fallible<BluetoothScanfilter> {
+fn canonicalize_filter(filter: &BluetoothRequestDeviceFilter) -> Fallible<ScanFilter> {
     // Step 2.4.1.
     if filter.services.is_none() &&
        filter.name.is_none() &&
@@ -174,7 +173,7 @@ fn canonicalize_filter(filter: &BluetoothRequestDeviceFilter) -> Fallible<Blueto
     }
 
     // Step 2.4.2: There is no empty canonicalizedFilter member,
-    // we create a BluetoothScanfilter instance at the end of the function.
+    // we create a ScanFilter instance at the end of the function.
 
     // Step 2.4.3.
     let services_vec = match filter.services {
@@ -217,9 +216,9 @@ fn canonicalize_filter(filter: &BluetoothRequestDeviceFilter) -> Fallible<Blueto
             }
 
             // Step 2.4.4.2.
-            name.to_string()
+            Some(name.to_string())
         },
-        None => String::new(),
+        None => None,
     };
 
     // Step 2.4.5.
@@ -262,7 +261,7 @@ fn canonicalize_filter(filter: &BluetoothRequestDeviceFilter) -> Fallible<Blueto
         None => String::new(),
     };
 
-    Ok(BluetoothScanfilter::new(name,
+    Ok(ScanFilter::new(name,
                                 name_prefix,
                                 services_vec,
                                 manufacturer_id,

@@ -24,22 +24,22 @@ impl ServiceUUIDSequence {
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct BluetoothScanfilter {
-    name: String,
+pub struct ScanFilter {
+    name: Option<String>,
     name_prefix: String,
     services: ServiceUUIDSequence,
     manufacturer_id: Option<u16>,
     service_data_uuid: String,
 }
 
-impl BluetoothScanfilter {
-    pub fn new(name: String,
+impl ScanFilter {
+    pub fn new(name: Option<String>,
                name_prefix: String,
                services: Vec<String>,
                manufacturer_id: Option<u16>,
                service_data_uuid: String)
-               -> BluetoothScanfilter {
-        BluetoothScanfilter {
+               -> ScanFilter {
+        ScanFilter {
             name: name,
             name_prefix: name_prefix,
             services: ServiceUUIDSequence::new(services),
@@ -48,8 +48,11 @@ impl BluetoothScanfilter {
         }
     }
 
-    pub fn get_name(&self) -> &str {
-        &self.name
+    pub fn get_name(&self) -> Option<&str> {
+        match &self.name {
+            &Some(ref name) => Some(name.as_str()),
+            &None => None,
+        }
     }
 
     pub fn get_name_prefix(&self) -> &str {
@@ -69,29 +72,29 @@ impl BluetoothScanfilter {
     }
 
     pub fn is_empty_or_invalid(&self) -> bool {
-        (self.name.is_empty() &&
+        (self.name.is_none() &&
          self.name_prefix.is_empty() &&
          self.get_services().is_empty() &&
          self.manufacturer_id.is_none() &&
          self.service_data_uuid.is_empty()) ||
-        self.name.len() > MAX_NAME_LENGTH ||
+        self.get_name().unwrap_or("").len() > MAX_NAME_LENGTH ||
         self.name_prefix.len() > MAX_NAME_LENGTH
     }
 }
 
 #[derive(Deserialize, Serialize)]
-pub struct BluetoothScanfilterSequence(Vec<BluetoothScanfilter>);
+pub struct ScanFilterSequence(Vec<ScanFilter>);
 
-impl BluetoothScanfilterSequence {
-    pub fn new(vec: Vec<BluetoothScanfilter>) -> BluetoothScanfilterSequence {
-        BluetoothScanfilterSequence(vec)
+impl ScanFilterSequence {
+    pub fn new(vec: Vec<ScanFilter>) -> ScanFilterSequence {
+        ScanFilterSequence(vec)
     }
 
     pub fn has_empty_or_invalid_filter(&self) -> bool {
-        self.0.iter().any(BluetoothScanfilter::is_empty_or_invalid)
+        self.0.iter().any(ScanFilter::is_empty_or_invalid)
     }
 
-    pub fn iter(&self) -> Iter<BluetoothScanfilter> {
+    pub fn iter(&self) -> Iter<ScanFilter> {
         self.0.iter()
     }
 
@@ -106,12 +109,12 @@ impl BluetoothScanfilterSequence {
 
 #[derive(Deserialize, Serialize)]
 pub struct RequestDeviceoptions {
-    filters: BluetoothScanfilterSequence,
+    filters: ScanFilterSequence,
     optional_services: ServiceUUIDSequence,
 }
 
 impl RequestDeviceoptions {
-    pub fn new(filters: BluetoothScanfilterSequence,
+    pub fn new(filters: ScanFilterSequence,
                services: ServiceUUIDSequence)
                -> RequestDeviceoptions {
         RequestDeviceoptions {
@@ -120,7 +123,7 @@ impl RequestDeviceoptions {
         }
     }
 
-    pub fn get_filters(&self) -> &BluetoothScanfilterSequence {
+    pub fn get_filters(&self) -> &ScanFilterSequence {
         &self.filters
     }
 

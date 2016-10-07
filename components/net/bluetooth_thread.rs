@@ -6,7 +6,7 @@ use bluetooth_test;
 use device::bluetooth::{BluetoothAdapter, BluetoothDevice, BluetoothGATTCharacteristic};
 use device::bluetooth::{BluetoothGATTDescriptor, BluetoothGATTService};
 use ipc_channel::ipc::{self, IpcReceiver, IpcSender};
-use net_traits::bluetooth_scanfilter::{BluetoothScanfilter, BluetoothScanfilterSequence, RequestDeviceoptions};
+use net_traits::bluetooth_scanfilter::{ScanFilter, ScanFilterSequence, RequestDeviceoptions};
 use net_traits::bluetooth_thread::{BluetoothCharacteristicMsg, BluetoothCharacteristicsMsg};
 use net_traits::bluetooth_thread::{BluetoothDescriptorMsg, BluetoothDescriptorsMsg};
 use net_traits::bluetooth_thread::{BluetoothDeviceMsg, BluetoothError, BluetoothMethodMsg};
@@ -99,14 +99,19 @@ impl BluetoothThreadFactory for IpcSender<BluetoothMethodMsg> {
 }
 
 // https://webbluetoothcg.github.io/web-bluetooth/#matches-a-filter
-fn matches_filter(device: &BluetoothDevice, filter: &BluetoothScanfilter) -> bool {
+fn matches_filter(device: &BluetoothDevice, filter: &ScanFilter) -> bool {
     if filter.is_empty_or_invalid() {
         return false;
     }
 
     // Step 1.
-    if !filter.get_name().is_empty() {
+    /*if !filter.get_name().is_empty() {
         if device.get_name().ok() != Some(filter.get_name().to_string()) {
+            return false;
+        }
+    }*/
+    if let Some(name) = filter.get_name() {
+        if device.get_name().ok() != Some(name.to_string()) {
             return false;
         }
     }
@@ -153,7 +158,7 @@ fn matches_filter(device: &BluetoothDevice, filter: &BluetoothScanfilter) -> boo
     true
 }
 
-fn matches_filters(device: &BluetoothDevice, filters: &BluetoothScanfilterSequence) -> bool {
+fn matches_filters(device: &BluetoothDevice, filters: &ScanFilterSequence) -> bool {
     if filters.has_empty_or_invalid_filter() {
         return false;
     }
