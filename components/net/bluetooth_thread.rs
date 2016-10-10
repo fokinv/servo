@@ -12,6 +12,7 @@ use net_traits::bluetooth_thread::{BluetoothDescriptorMsg, BluetoothDescriptorsM
 use net_traits::bluetooth_thread::{BluetoothDeviceMsg, BluetoothError, BluetoothMethodMsg};
 use net_traits::bluetooth_thread::{BluetoothResult, BluetoothServiceMsg, BluetoothServicesMsg};
 use rand::{self, Rng};
+use script::bluetooth_blacklist::{uuid_is_blacklisted, Blacklist};
 use std::borrow::ToOwned;
 use std::collections::{HashMap, HashSet};
 use std::string::String;
@@ -701,11 +702,13 @@ impl BluetoothManager {
                 .get(&device_id)
                 .map_or(false, |s| s.contains(&service.get_uuid().unwrap_or("".to_owned()))) {
                 if let Ok(uuid) = service.get_uuid() {
-                    services_vec.push(BluetoothServiceMsg {
-                                          uuid: uuid,
-                                          is_primary: true,
-                                          instance_id: service.get_id(),
-                                      });
+                    if !uuid_is_blacklisted(&uuid, Blacklist::All) {
+                        services_vec.push(BluetoothServiceMsg {
+                                              uuid: uuid,
+                                              is_primary: true,
+                                              instance_id: service.get_id(),
+                                          });
+                    }
                 }
             }
         }
@@ -785,11 +788,13 @@ impl BluetoothManager {
         let mut services_vec = vec!();
         for service in services {
             if let Ok(service_uuid) = service.get_uuid() {
-                services_vec.push(BluetoothServiceMsg {
-                                      uuid: service_uuid,
-                                      is_primary: service.is_primary().unwrap_or(false),
-                                      instance_id: service.get_id(),
-                                  });
+                if !uuid_is_blacklisted(&service_uuid, Blacklist::All) {
+                    services_vec.push(BluetoothServiceMsg {
+                                          uuid: service_uuid,
+                                          is_primary: service.is_primary().unwrap_or(false),
+                                          instance_id: service.get_id(),
+                                      });
+                }
             }
         }
         if let Some(uuid) = uuid {
@@ -854,21 +859,23 @@ impl BluetoothManager {
         let mut characteristics_vec = vec!();
         for characteristic in characteristics {
             if let Ok(uuid) = characteristic.get_uuid() {
-                let properties = self.get_characteristic_properties(&characteristic);
-                characteristics_vec.push(
-                                BluetoothCharacteristicMsg {
-                                    uuid: uuid,
-                                    instance_id: characteristic.get_id(),
-                                    broadcast: properties.contains(BROADCAST),
-                                    read: properties.contains(READ),
-                                    write_without_response: properties.contains(WRITE_WITHOUT_RESPONSE),
-                                    write: properties.contains(WRITE),
-                                    notify: properties.contains(NOTIFY),
-                                    indicate: properties.contains(INDICATE),
-                                    authenticated_signed_writes: properties.contains(AUTHENTICATED_SIGNED_WRITES),
-                                    reliable_write: properties.contains(RELIABLE_WRITE),
-                                    writable_auxiliaries: properties.contains(WRITABLE_AUXILIARIES),
-                                });
+                if !uuid_is_blacklisted(&uuid, Blacklist::All) {
+                    let properties = self.get_characteristic_properties(&characteristic);
+                    characteristics_vec.push(
+                                    BluetoothCharacteristicMsg {
+                                        uuid: uuid,
+                                        instance_id: characteristic.get_id(),
+                                        broadcast: properties.contains(BROADCAST),
+                                        read: properties.contains(READ),
+                                        write_without_response: properties.contains(WRITE_WITHOUT_RESPONSE),
+                                        write: properties.contains(WRITE),
+                                        notify: properties.contains(NOTIFY),
+                                        indicate: properties.contains(INDICATE),
+                                        authenticated_signed_writes: properties.contains(AUTHENTICATED_SIGNED_WRITES),
+                                        reliable_write: properties.contains(RELIABLE_WRITE),
+                                        writable_auxiliaries: properties.contains(WRITABLE_AUXILIARIES),
+                                    });
+                }
             }
         }
         if characteristics_vec.is_empty() {
@@ -919,10 +926,12 @@ impl BluetoothManager {
         let mut descriptors_vec = vec!();
         for descriptor in descriptors {
             if let Ok(uuid) = descriptor.get_uuid() {
-                descriptors_vec.push(BluetoothDescriptorMsg {
-                                         uuid: uuid,
-                                         instance_id: descriptor.get_id(),
-                                     });
+                if !uuid_is_blacklisted(&uuid, Blacklist::All) {
+                    descriptors_vec.push(BluetoothDescriptorMsg {
+                                             uuid: uuid,
+                                             instance_id: descriptor.get_id(),
+                                         });
+                }
             }
         }
         if descriptors_vec.is_empty() {
