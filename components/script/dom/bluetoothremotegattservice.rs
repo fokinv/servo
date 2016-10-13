@@ -62,6 +62,10 @@ impl BluetoothRemoteGATTService {
                            BluetoothRemoteGATTServiceBinding::Wrap)
     }
 
+    pub fn get_device(&self) -> Root<BluetoothDevice> {
+        self.device.get()
+    }
+
     fn get_bluetooth_thread(&self) -> IpcSender<BluetoothMethodMsg> {
         self.global().as_window().bluetooth_thread()
     }
@@ -87,6 +91,12 @@ impl BluetoothRemoteGATTService {
         let characteristic = receiver.recv().unwrap();
         match characteristic {
             Ok(characteristic) => {
+                let context = self.device.get().get_context();
+                if let Some(existing_characteristic) = context.get_characteristic_map()
+                                                              .borrow()
+                                                              .get(&characteristic.instance_id.clone()) {
+                    return Ok(existing_characteristic.get());
+                }
                 let global = self.global();
                 let properties = BluetoothCharacteristicProperties::new(&global,
                                                                         characteristic.broadcast,
@@ -98,11 +108,14 @@ impl BluetoothRemoteGATTService {
                                                                         characteristic.authenticated_signed_writes,
                                                                         characteristic.reliable_write,
                                                                         characteristic.writable_auxiliaries);
-                Ok(BluetoothRemoteGATTCharacteristic::new(&global,
-                                                          self,
-                                                          DOMString::from(characteristic.uuid),
-                                                          &properties,
-                                                          characteristic.instance_id))
+                let bt_characteristic = BluetoothRemoteGATTCharacteristic::new(&global,
+                                                                               self,
+                                                                               DOMString::from(characteristic.uuid),
+                                                                               &properties,
+                                                                               characteristic.instance_id.clone());
+                context.get_characteristic_map().borrow_mut().insert(characteristic.instance_id,
+                                                                     MutHeap::new(&bt_characteristic));
+                Ok(bt_characteristic)
             },
             Err(error) => {
                 Err(Error::from(error))
@@ -133,7 +146,14 @@ impl BluetoothRemoteGATTService {
         let characteristics_vec = receiver.recv().unwrap();
         match characteristics_vec {
             Ok(characteristic_vec) => {
+                let context = self.device.get().get_context();
                 for characteristic in characteristic_vec {
+                    if let Some(existing_characteristic) = context.get_characteristic_map()
+                                                                  .borrow()
+                                                                  .get(&characteristic.instance_id.clone()) {
+                        characteristics.push(existing_characteristic.get());
+                        continue;
+                    }
                     let global = self.global();
                     let properties = BluetoothCharacteristicProperties::new(&global,
                                                                             characteristic.broadcast,
@@ -145,11 +165,14 @@ impl BluetoothRemoteGATTService {
                                                                             characteristic.authenticated_signed_writes,
                                                                             characteristic.reliable_write,
                                                                             characteristic.writable_auxiliaries);
-                    characteristics.push(BluetoothRemoteGATTCharacteristic::new(&global,
-                                                                                self,
-                                                                                DOMString::from(characteristic.uuid),
-                                                                                &properties,
-                                                                                characteristic.instance_id));
+                    let bt_characteristic = BluetoothRemoteGATTCharacteristic::new(&global,
+                                                                                   self,
+                                                                                   DOMString::from(characteristic.uuid),
+                                                                                   &properties,
+                                                                                   characteristic.instance_id.clone());
+                    context.get_characteristic_map().borrow_mut().insert(characteristic.instance_id,
+                                                                         MutHeap::new(&bt_characteristic));
+                    characteristics.push(bt_characteristic);
                 }
                 Ok(characteristics)
             },

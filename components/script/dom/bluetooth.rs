@@ -14,6 +14,9 @@ use dom::bindings::reflector::{Reflectable, Reflector, reflect_dom_object};
 use dom::bindings::str::DOMString;
 use dom::bluetoothadvertisingdata::BluetoothAdvertisingData;
 use dom::bluetoothdevice::BluetoothDevice;
+use dom::bluetoothremotegattcharacteristic::BluetoothRemoteGATTCharacteristic;
+use dom::bluetoothremotegattdescriptor::BluetoothRemoteGATTDescriptor;
+use dom::bluetoothremotegattservice::BluetoothRemoteGATTService;
 use dom::bluetoothuuid::{BluetoothServiceUUID, BluetoothUUID};
 use dom::globalscope::GlobalScope;
 use dom::promise::Promise;
@@ -44,6 +47,9 @@ const OPTIONS_ERROR: &'static str = "Fields of 'options' conflict with each othe
 pub struct Bluetooth {
     reflector_: Reflector,
     device_instance_map: DOMRefCell<HashMap<String, MutHeap<JS<BluetoothDevice>>>>,
+    service_instance_map: DOMRefCell<HashMap<String, MutHeap<JS<BluetoothRemoteGATTService>>>>,
+    characteristic_instance_map: DOMRefCell<HashMap<String, MutHeap<JS<BluetoothRemoteGATTCharacteristic>>>>,
+    descriptor_instance_map: DOMRefCell<HashMap<String, MutHeap<JS<BluetoothRemoteGATTDescriptor>>>>,
 }
 
 impl Bluetooth {
@@ -51,6 +57,9 @@ impl Bluetooth {
         Bluetooth {
             reflector_: Reflector::new(),
             device_instance_map: DOMRefCell::new(HashMap::new()),
+            service_instance_map: DOMRefCell::new(HashMap::new()),
+            characteristic_instance_map: DOMRefCell::new(HashMap::new()),
+            descriptor_instance_map: DOMRefCell::new(HashMap::new()),
         }
     }
 
@@ -58,6 +67,19 @@ impl Bluetooth {
         reflect_dom_object(box Bluetooth::new_inherited(),
                            global,
                            BluetoothBinding::Wrap)
+    }
+
+    pub fn get_service_map(&self) -> &DOMRefCell<HashMap<String, MutHeap<JS<BluetoothRemoteGATTService>>>> {
+        &self.service_instance_map
+    }
+
+    pub fn get_characteristic_map(&self)
+                                  -> &DOMRefCell<HashMap<String, MutHeap<JS<BluetoothRemoteGATTCharacteristic>>>> {
+        &self.characteristic_instance_map
+    }
+
+    pub fn get_descriptor_map(&self) -> &DOMRefCell<HashMap<String, MutHeap<JS<BluetoothRemoteGATTDescriptor>>>> {
+        &self.descriptor_instance_map
     }
 
     fn get_bluetooth_thread(&self) -> IpcSender<BluetoothMethodMsg> {
@@ -116,7 +138,8 @@ impl Bluetooth {
                 let bt_device = BluetoothDevice::new(&global,
                                                      DOMString::from(device.id.clone()),
                                                      device.name.map(DOMString::from),
-                                                     &ad_data);
+                                                     &ad_data,
+                                                     &self);
                 self.device_instance_map.borrow_mut().insert(device.id, MutHeap::new(&bt_device));
                 Ok(bt_device)
             },
