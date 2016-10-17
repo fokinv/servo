@@ -7,14 +7,14 @@ use device::bluetooth::{BluetoothAdapter, BluetoothDevice};
 use device::bluetooth::{BluetoothGATTCharacteristic, BluetoothGATTDescriptor, BluetoothGATTService};
 use ipc_channel::ipc::IpcSender;
 use net_traits::bluetooth_thread::{BluetoothError, BluetoothResult};
-use rand::{self, Rng};
 use std::borrow::ToOwned;
 use std::cell::RefCell;
 use std::collections::HashSet;
 use std::error::Error;
 use std::string::String;
+use uuid::Uuid;
 
-thread_local!(pub static CACHED_IDS: RefCell<HashSet<String>> = RefCell::new(HashSet::new()));
+thread_local!(pub static CACHED_IDS: RefCell<HashSet<Uuid>> = RefCell::new(HashSet::new()));
 
 const ADAPTER_ERROR: &'static str = "No adapter found";
 const FAILED_SET_ERROR: &'static str = "Failed to set an attribute for testing";
@@ -74,12 +74,11 @@ const CHARACTERISTIC_USER_DESCRIPTION_UUID: &'static str = "00002901-0000-1000-8
 const CLIENT_CHARACTERISTIC_CONFIGURATION_UUID: &'static str = "00002902-0000-1000-8000-00805f9b34fb";
 const NUMBER_OF_DIGITALS_UUID: &'static str = "00002909-0000-1000-8000-00805f9b34fb";
 
-fn generate_id() -> String {
-    let mut id = String::new();
+fn generate_id() -> Uuid {
+    let mut id = Uuid::nil();
     let mut generated = false;
-    let mut rng = rand::thread_rng();
     while !generated {
-        id = rng.gen::<u32>().to_string();
+        id = Uuid::new_v4();
         CACHED_IDS.with(|cache|
             if !cache.borrow().contains(&id) {
                 cache.borrow_mut().insert(id.clone());
@@ -90,450 +89,387 @@ fn generate_id() -> String {
     id
 }
 
-fn set_attribute_or_return_error(result: Result<(), Box<Error>>, sender: &IpcSender<BluetoothResult<()>>) {
-    match result {
-        Ok(_) => (),
-        Err(_) => return drop(sender.send(Err(BluetoothError::Type(FAILED_SET_ERROR.to_string())))),
-    }
-}
-
 // Set the adapter's name, is_powered and is_discoverable attributes
-fn set_adapter(adapter: &BluetoothAdapter, adapter_name: String, sender: &IpcSender<BluetoothResult<()>>) {
-    set_attribute_or_return_error(adapter.set_name(adapter_name), sender);
-    set_attribute_or_return_error(adapter.set_powered(true), sender);
-    set_attribute_or_return_error(adapter.set_discoverable(true), sender);
+fn set_adapter(adapter: &BluetoothAdapter, adapter_name: String) -> Result<(), Box<Error>> {
+    try!(adapter.set_name(adapter_name));
+    try!(adapter.set_powered(true));
+    try!(adapter.set_discoverable(true));
+    Ok(())
 }
 
 // Create Device
 fn create_device(adapter: &BluetoothAdapter,
                  name: String,
-                 address: String,
-                 sender: &IpcSender<BluetoothResult<()>>)
-                 -> BluetoothDevice {
-    let device = BluetoothDevice::create_device(adapter.clone(), generate_id());
-    set_attribute_or_return_error(device.set_name(Some(name)), sender);
-    set_attribute_or_return_error(device.set_address(address), sender);
-    set_attribute_or_return_error(device.set_connectable(true), sender);
-    device
+                 address: String)
+                 -> Result<BluetoothDevice, Box<Error>> {
+    let device = BluetoothDevice::create_device(adapter.clone(), generate_id().to_string());
+    try!(device.set_name(Some(name)));
+    try!(device.set_address(address));
+    try!(device.set_connectable(true));
+    Ok(device)
 }
 
 // Create Device with UUIDs
 fn create_device_with_uuids(adapter: &BluetoothAdapter,
                             name: String,
                             address: String,
-                            uuids: Vec<String>,
-                            sender: &IpcSender<BluetoothResult<()>>)
-                            -> BluetoothDevice {
-    let device = create_device(adapter, name, address, sender);
-    set_attribute_or_return_error(device.set_uuids(uuids), sender);
-    device
+                            uuids: Vec<String>)
+                            -> Result<BluetoothDevice, Box<Error>> {
+    let device = try!(create_device(adapter, name, address));
+    try!(device.set_uuids(uuids));
+    Ok(device)
 }
 
 // Create Service
 fn create_service(device: &BluetoothDevice,
-                  uuid: String,
-                  sender: &IpcSender<BluetoothResult<()>>)
-                  -> BluetoothGATTService {
-    let service = BluetoothGATTService::create_service(device.clone(), generate_id().to_owned());
-    set_attribute_or_return_error(service.set_uuid(uuid), sender);
-    service
+                  uuid: String)
+                  -> Result<BluetoothGATTService, Box<Error>>{
+    let service = BluetoothGATTService::create_service(device.clone(), generate_id().to_string());
+    try!(service.set_uuid(uuid));
+    Ok(service)
 }
 
 // Create Characteristic
 fn create_characteristic(service: &BluetoothGATTService,
-                         uuid: String,
-                         sender: &IpcSender<BluetoothResult<()>>)
-                         -> BluetoothGATTCharacteristic {
-    let characteristic = BluetoothGATTCharacteristic::create_characteristic(service.clone(), generate_id().to_owned());
-    set_attribute_or_return_error(characteristic.set_uuid(uuid), sender);
-    characteristic
+                         uuid: String)
+                         -> Result<BluetoothGATTCharacteristic, Box<Error>>{
+    let characteristic = BluetoothGATTCharacteristic::create_characteristic(service.clone(), generate_id().to_string());
+    try!(characteristic.set_uuid(uuid));
+    Ok(characteristic)
 }
 
 // Create Characteristic with value
 fn create_characteristic_with_value(service: &BluetoothGATTService,
                                     uuid: String,
-                                    value: Vec<u8>,
-                                    sender: &IpcSender<BluetoothResult<()>>)
-                                    -> BluetoothGATTCharacteristic {
-    let characteristic = create_characteristic(service, uuid, sender);
-    set_attribute_or_return_error(characteristic.set_value(value), sender);
-    characteristic
+                                    value: Vec<u8>)
+                                    -> Result<BluetoothGATTCharacteristic, Box<Error>>{
+    let characteristic = try!(create_characteristic(service, uuid));
+    try!(characteristic.set_value(value));
+    Ok(characteristic)
 }
 
 // Create Descriptor
 fn create_descriptor(characteristic: &BluetoothGATTCharacteristic,
-                                     uuid: String,
-                                     sender: &IpcSender<BluetoothResult<()>>)
-                                     -> BluetoothGATTDescriptor {
-    let descriptor = BluetoothGATTDescriptor::create_descriptor(characteristic.clone(), generate_id().to_owned());
-    set_attribute_or_return_error(descriptor.set_uuid(uuid), sender);
-    descriptor
+                                     uuid: String)
+                                     -> Result<BluetoothGATTDescriptor, Box<Error>>{
+    let descriptor = BluetoothGATTDescriptor::create_descriptor(characteristic.clone(), generate_id().to_string());
+    try!(descriptor.set_uuid(uuid));
+    Ok(descriptor)
 }
 
 // Create Descriptor with value
 fn create_descriptor_with_value(characteristic: &BluetoothGATTCharacteristic,
                                 uuid: String,
-                                value: Vec<u8>,
-                                sender: &IpcSender<BluetoothResult<()>>)
-                                -> BluetoothGATTDescriptor {
-    let descriptor = create_descriptor(characteristic, uuid, sender);
-    set_attribute_or_return_error(descriptor.set_value(value), sender);
-    descriptor
+                                value: Vec<u8>)
+                                -> Result<BluetoothGATTDescriptor, Box<Error>>{
+    let descriptor = try!(create_descriptor(characteristic, uuid));
+    try!(descriptor.set_value(value));
+    Ok(descriptor)
 }
 
-fn create_heart_rate_service(device: &BluetoothDevice,
-                             sender: &IpcSender<BluetoothResult<()>>)
-                             -> BluetoothGATTService {
+fn create_heart_rate_service(device: &BluetoothDevice)
+                             -> Result<BluetoothGATTService, Box<Error>>{
     // Heart Rate Service
-    let heart_rate_service = create_service(device,
-                                            HEART_RATE_SERVICE_UUID.to_owned(),
-                                            sender);
+    let heart_rate_service = try!(create_service(device,
+                                            HEART_RATE_SERVICE_UUID.to_owned()));
 
     // Heart Rate Measurement Characteristic
     let _heart_rate_measurement_characteristic =
-        create_characteristic_with_value(&heart_rate_service,
+        try!(create_characteristic_with_value(&heart_rate_service,
                                          HEART_RATE_MEASUREMENT_CHARACTERISTIC_UUID.to_owned(),
-                                         vec![3],
-                                         sender);
+                                         vec![3]));
 
     // Body Sensor Location Characteristic 1
     let _body_sensor_location_characteristic_1 =
-        create_characteristic_with_value(&heart_rate_service,
+        try!(create_characteristic_with_value(&heart_rate_service,
                                          BODY_SENSOR_LOCATION_CHARACTERISTIC_UUID.to_owned(),
-                                         vec![1],
-                                         sender);
+                                         vec![1]));
     // Body Sensor Location Characteristic 2
     let _body_sensor_location_characteristic_2 =
-        create_characteristic_with_value(&heart_rate_service,
+        try!(create_characteristic_with_value(&heart_rate_service,
                                          BODY_SENSOR_LOCATION_CHARACTERISTIC_UUID.to_owned(),
-                                         vec![2],
-                                         sender);
-    heart_rate_service
+                                         vec![2]));
+    Ok(heart_rate_service)
 }
 
-fn create_generic_access_service(device: &BluetoothDevice,
-                                 sender: &IpcSender<BluetoothResult<()>>)
-                                 -> BluetoothGATTService {
-    let generic_access_service = create_service(device,
-                                                GENERIC_ACCESS_SERVICE_UUID.to_owned(),
-                                                sender);
+fn create_generic_access_service(device: &BluetoothDevice)
+                                 -> Result<BluetoothGATTService, Box<Error>>{
+    let generic_access_service = try!(create_service(device,
+                                                GENERIC_ACCESS_SERVICE_UUID.to_owned()));
     // Device Name Characteristic
     let device_name_characteristic =
-        create_characteristic_with_value(&generic_access_service,
+        try!(create_characteristic_with_value(&generic_access_service,
                                          DEVICE_NAME_CHARACTERISTIC_UUID.to_owned(),
-                                         HEART_RATE_DEVICE_NAME.as_bytes().to_vec(),
-                                         sender);
-    set_attribute_or_return_error(device_name_characteristic
-                                  .set_flags(vec![READ_FLAG.to_string(), WRITE_FLAG.to_string()]),
-                                  sender);
+                                         HEART_RATE_DEVICE_NAME.as_bytes().to_vec()));
+    try!(device_name_characteristic.set_flags(vec![READ_FLAG.to_string(), WRITE_FLAG.to_string()]));
 
     // Number of Digitals descriptor
     let _number_of_digitals_descriptor =
-        create_descriptor_with_value(&device_name_characteristic,
+        try!(create_descriptor_with_value(&device_name_characteristic,
                                      NUMBER_OF_DIGITALS_UUID.to_owned(),
-                                     vec![49, 49],
-                                     sender);
+                                     vec![49, 49]));
 
     // Characteristic User Description Descriptor
     let _characteristic_user_description =
-        create_descriptor_with_value(&device_name_characteristic,
+        try!(create_descriptor_with_value(&device_name_characteristic,
                                      CHARACTERISTIC_USER_DESCRIPTION_UUID.to_owned(),
-                                     vec![22, 33, 44, 55],
-                                     sender);
+                                     vec![22, 33, 44, 55]));
 
     // Client Characteristic Configuration descriptor
     let _client_characteristic_configuration =
-        create_descriptor_with_value(&device_name_characteristic,
+        try!(create_descriptor_with_value(&device_name_characteristic,
                                      CLIENT_CHARACTERISTIC_CONFIGURATION_UUID.to_owned(),
-                                     vec![0, 0],
-                                     sender);
+                                     vec![0, 0]));
 
     // Peripheral Privacy Flag Characteristic
     let peripheral_privacy_flag_characteristic =
-        create_characteristic(&generic_access_service,
-                              PERIPHERAL_PRIVACY_FLAG_CHARACTERISTIC_UUID.to_owned(),
-                              sender);
-    set_attribute_or_return_error(peripheral_privacy_flag_characteristic
-                                  .set_flags(vec![READ_FLAG.to_string(), WRITE_FLAG.to_string()]),
-                                  sender);
-    generic_access_service
+        try!(create_characteristic(&generic_access_service,
+                              PERIPHERAL_PRIVACY_FLAG_CHARACTERISTIC_UUID.to_owned()));
+    try!(peripheral_privacy_flag_characteristic
+                                  .set_flags(vec![READ_FLAG.to_string(), WRITE_FLAG.to_string()]));
+    Ok(generic_access_service)
 }
 
 // Create Heart Rate Device
-fn create_heart_rate_device(adapter: &BluetoothAdapter,
-                            sender: &IpcSender<BluetoothResult<()>>)
-                            -> BluetoothDevice {
+fn create_heart_rate_device(adapter: &BluetoothAdapter)
+                            -> Result<BluetoothDevice, Box<Error>> {
     // Heart Rate Device
     let heart_rate_device =
-        create_device_with_uuids(adapter,
+        try!(create_device_with_uuids(adapter,
                                  HEART_RATE_DEVICE_NAME.to_owned(),
                                  HEART_RATE_DEVICE_ADDRESS.to_owned(),
-                                 vec![GENERIC_ACCESS_SERVICE_UUID.to_owned(), HEART_RATE_SERVICE_UUID.to_owned()],
-                                 sender);
+                                 vec![GENERIC_ACCESS_SERVICE_UUID.to_owned(), HEART_RATE_SERVICE_UUID.to_owned()]));
 
     // Generic Access Service
-    let _generic_access_service = create_generic_access_service(&heart_rate_device, sender);
+    let _generic_access_service = try!(create_generic_access_service(&heart_rate_device));
 
     // Heart Rate Service
-    let _heart_rate_service = create_heart_rate_service(&heart_rate_device, sender);
+    let _heart_rate_service = try!(create_heart_rate_service(&heart_rate_device));
 
-    heart_rate_device
+    Ok(heart_rate_device)
 }
 
-pub fn test(manager: &mut BluetoothManager, data_set_name: String, sender: &IpcSender<BluetoothResult<()>>) {
+pub fn test(manager: &mut BluetoothManager, data_set_name: String) -> Result<(), Box<Error>> {
     match manager.get_or_create_adapter().as_ref() {
         Some(adapter) => {
             match data_set_name.as_str() {
                 NOT_PRESENT_ADAPTER => {
-                    set_adapter(adapter, NOT_PRESENT_ADAPTER.to_owned(), sender);
-                    set_attribute_or_return_error(adapter.set_present(false), sender);
+                    try!(set_adapter(adapter, NOT_PRESENT_ADAPTER.to_owned()));
+                    try!(adapter.set_present(false));
                 },
                 NOT_POWERED_ADAPTER => {
-                    set_adapter(adapter, NOT_POWERED_ADAPTER.to_owned(), sender);
-                    set_attribute_or_return_error(adapter.set_powered(false), sender);
+                    try!(set_adapter(adapter, NOT_POWERED_ADAPTER.to_owned()));
+                    try!(adapter.set_powered(false));
                 },
                 EMPTY_ADAPTER => {
-                    set_adapter(adapter, EMPTY_ADAPTER.to_owned(), sender);
+                    try!(set_adapter(adapter, EMPTY_ADAPTER.to_owned()));
                 },
                 GLUCOSE_HEART_RATE_ADAPTER => {
-                    set_adapter(adapter, GLUCOSE_HEART_RATE_ADAPTER.to_owned(), sender);
+                    try!(set_adapter(adapter, GLUCOSE_HEART_RATE_ADAPTER.to_owned()));
 
                     // Glucose Device
                     let _glucose_device =
-                    create_device_with_uuids(adapter,
+                    try!(create_device_with_uuids(adapter,
                                              GLUCOSE_DEVICE_NAME.to_owned(),
                                              GLUCOSE_DEVICE_ADDRESS.to_owned(),
-                                             vec![GLUCOSE_SERVICE_UUID.to_owned(), TX_POWER_SERVICE_UUID.to_owned()],
-                                             sender);
+                                             vec![GLUCOSE_SERVICE_UUID.to_owned(), TX_POWER_SERVICE_UUID.to_owned()]));
 
                     // Heart Rate Device
-                    let _heart_rate_device = create_device_with_uuids(adapter,
+                    let _heart_rate_device = try!(create_device_with_uuids(adapter,
                                                                       HEART_RATE_DEVICE_NAME.to_owned(),
                                                                       HEART_RATE_DEVICE_ADDRESS.to_owned(),
                                                                       vec![GENERIC_ACCESS_SERVICE_UUID.to_owned(),
-                                                                           HEART_RATE_SERVICE_UUID.to_owned()],
-                                                                      sender);
+                                                                           HEART_RATE_SERVICE_UUID.to_owned()]));
                 },
                 UNICODE_DEVICE_ADAPTER => {
-                    set_adapter(adapter, UNICODE_DEVICE_ADAPTER.to_owned(), sender);
+                    try!(set_adapter(adapter, UNICODE_DEVICE_ADAPTER.to_owned()));
 
                     // Unicode Device
-                    let _unicode_device = create_device(adapter,
+                    let _unicode_device = try!(create_device(adapter,
                                                         UNICODE_DEVICE_NAME.to_owned(),
-                                                        UNICODE_DEVICE_ADDRESS.to_owned(),
-                                                        sender);
+                                                        UNICODE_DEVICE_ADDRESS.to_owned()));
                 },
                 MISSING_SERVICE_HEART_RATE_ADAPTER => {
-                    set_adapter(adapter, MISSING_SERVICE_HEART_RATE_ADAPTER.to_owned(), sender);
+                    try!(set_adapter(adapter, MISSING_SERVICE_HEART_RATE_ADAPTER.to_owned()));
 
                     // Heart Rate Device
-                    let _heart_rate_device = create_device_with_uuids(adapter,
+                    let _heart_rate_device = try!(create_device_with_uuids(adapter,
                                                                       HEART_RATE_DEVICE_NAME.to_owned(),
                                                                       HEART_RATE_DEVICE_ADDRESS.to_owned(),
                                                                       vec![GENERIC_ACCESS_SERVICE_UUID.to_owned(),
-                                                                           HEART_RATE_SERVICE_UUID.to_owned()],
-                                                                      sender);
+                                                                           HEART_RATE_SERVICE_UUID.to_owned()]));
                 },
                 MISSING_CHARACTERISTIC_HEART_RATE_ADAPTER => {
-                    set_adapter(adapter, MISSING_CHARACTERISTIC_HEART_RATE_ADAPTER.to_owned(), sender);
+                    try!(set_adapter(adapter, MISSING_CHARACTERISTIC_HEART_RATE_ADAPTER.to_owned()));
 
                     // Heart Rate Device
-                    let heart_rate_device = create_device_with_uuids(adapter,
+                    let heart_rate_device = try!(create_device_with_uuids(adapter,
                                                                      HEART_RATE_DEVICE_NAME.to_owned(),
                                                                      HEART_RATE_DEVICE_ADDRESS.to_owned(),
                                                                      vec![GENERIC_ACCESS_SERVICE_UUID.to_owned(),
-                                                                          HEART_RATE_SERVICE_UUID.to_owned()],
-                                                                     sender);
+                                                                          HEART_RATE_SERVICE_UUID.to_owned()]));
                     // Generic Access Service
-                    let _generic_access_service = create_service(&heart_rate_device,
-                                                                 GENERIC_ACCESS_SERVICE_UUID.to_owned(),
-                                                                 sender);
+                    let _generic_access_service = try!(create_service(&heart_rate_device,
+                                                                 GENERIC_ACCESS_SERVICE_UUID.to_owned()));
 
                     // Heart Rate Service
-                    let _heart_rate_service = create_service(&heart_rate_device,
-                                                             HEART_RATE_SERVICE_UUID.to_owned(),
-                                                             sender);
+                    let _heart_rate_service = try!(create_service(&heart_rate_device,
+                                                             HEART_RATE_SERVICE_UUID.to_owned()));
                 },
                 MISSING_DESCRIPTOR_HEART_RATE_ADAPTER => {
-                    set_adapter(adapter, MISSING_DESCRIPTOR_HEART_RATE_ADAPTER.to_owned(), sender);
+                    try!(set_adapter(adapter, MISSING_DESCRIPTOR_HEART_RATE_ADAPTER.to_owned()));
 
                     // Heart Rate Device
-                    let heart_rate_device = create_device_with_uuids(adapter,
+                    let heart_rate_device = try!(create_device_with_uuids(adapter,
                                                                      HEART_RATE_DEVICE_NAME.to_owned(),
                                                                      HEART_RATE_DEVICE_ADDRESS.to_owned(),
                                                                      vec![GENERIC_ACCESS_SERVICE_UUID.to_owned(),
-                                                                          HEART_RATE_SERVICE_UUID.to_owned()],
-                                                                     sender);
+                                                                          HEART_RATE_SERVICE_UUID.to_owned()]));
                     // Generic Access Service
-                    let generic_access_service = create_service(&heart_rate_device,
-                                                                GENERIC_ACCESS_SERVICE_UUID.to_owned(),
-                                                                sender);
+                    let generic_access_service = try!(create_service(&heart_rate_device,
+                                                                GENERIC_ACCESS_SERVICE_UUID.to_owned()));
 
                     // Device Name Characteristic
                     let device_name_characteristic =
-                        create_characteristic_with_value(&generic_access_service,
+                        try!(create_characteristic_with_value(&generic_access_service,
                                                          DEVICE_NAME_CHARACTERISTIC_UUID.to_owned(),
-                                                         HEART_RATE_DEVICE_NAME.as_bytes().to_vec(),
-                                                         sender);
-                    set_attribute_or_return_error(device_name_characteristic
-                                                  .set_flags(vec![READ_FLAG.to_string(), WRITE_FLAG.to_string()]),
-                                                  sender);
+                                                         HEART_RATE_DEVICE_NAME.as_bytes().to_vec()));
 
                     // Peripheral Privacy Flag Characteristic
                     let peripheral_privacy_flag_characteristic =
-                        create_characteristic(&generic_access_service,
-                                              PERIPHERAL_PRIVACY_FLAG_CHARACTERISTIC_UUID.to_owned(),
-                                              sender);
-                    set_attribute_or_return_error(peripheral_privacy_flag_characteristic
-                                                  .set_flags(vec![READ_FLAG.to_string(), WRITE_FLAG.to_string()]),
-                                                  sender);
+                        try!(create_characteristic(&generic_access_service,
+                                              PERIPHERAL_PRIVACY_FLAG_CHARACTERISTIC_UUID.to_owned()));
+                    try!(peripheral_privacy_flag_characteristic
+                                                  .set_flags(vec![READ_FLAG.to_string(), WRITE_FLAG.to_string()]));
 
                     // Heart Rate Service
-                    let _heart_rate_service = create_heart_rate_service(&heart_rate_device, sender);
+                    let _heart_rate_service = try!(create_heart_rate_service(&heart_rate_device));
                 },
                 HEART_RATE_ADAPTER => {
-                    set_adapter(adapter, HEART_RATE_ADAPTER.to_owned(), sender);
+                    try!(set_adapter(adapter, HEART_RATE_ADAPTER.to_owned()));
                     // Heart Rate Device
-                    let _heart_rate_device = create_heart_rate_device(adapter, sender);
+                    let _heart_rate_device = try!(create_heart_rate_device(adapter));
                 },
                 EMPTY_NAME_HEART_RATE_ADAPTER => {
-                    set_adapter(adapter, EMPTY_NAME_HEART_RATE_ADAPTER.to_owned(), sender);
+                    try!(set_adapter(adapter, EMPTY_NAME_HEART_RATE_ADAPTER.to_owned()));
 
                     // Heart Rate Device
-                    let heart_rate_device = create_heart_rate_device(adapter, sender);
-                    set_attribute_or_return_error(heart_rate_device
-                                                  .set_name(Some(EMPTY_DEVICE_NAME.to_owned())),
-                                                  sender);
+                    let heart_rate_device = try!(create_heart_rate_device(adapter));
+                    try!(heart_rate_device.set_name(Some(EMPTY_DEVICE_NAME.to_owned())));
                 },
                 NO_NAME_HEART_RATE_ADAPTER => {
-                    set_adapter(adapter, NO_NAME_HEART_RATE_ADAPTER.to_owned(), sender);
+                    try!(set_adapter(adapter, NO_NAME_HEART_RATE_ADAPTER.to_owned()));
 
                     // Heart Rate Device
-                    let heart_rate_device = create_heart_rate_device(adapter, sender);
-                    set_attribute_or_return_error(heart_rate_device.set_name(None), sender);
+                    let heart_rate_device = try!(create_heart_rate_device(adapter));
+                    try!(heart_rate_device.set_name(None));
                 },
                 TWO_HEART_RATE_SERVICES_ADAPTER => {
-                    set_adapter(adapter, TWO_HEART_RATE_SERVICES_ADAPTER.to_owned(), sender);
+                    try!(set_adapter(adapter, TWO_HEART_RATE_SERVICES_ADAPTER.to_owned()));
 
                     // Heart Rate Device
-                    let heart_rate_device = create_device_with_uuids(adapter,
+                    let heart_rate_device = try!(create_device_with_uuids(adapter,
                                                                      HEART_RATE_DEVICE_NAME.to_owned(),
                                                                      HEART_RATE_DEVICE_ADDRESS.to_owned(),
                                                                      vec![GENERIC_ACCESS_SERVICE_UUID.to_owned(),
-                                                                          HEART_RATE_SERVICE_UUID.to_owned()],
-                                                                     sender);
-                    set_attribute_or_return_error(heart_rate_device
+                                                                          HEART_RATE_SERVICE_UUID.to_owned()]));
+                    try!(heart_rate_device
                         .set_uuids(vec![
                             GENERIC_ACCESS_SERVICE_UUID.to_owned(),
                             HEART_RATE_SERVICE_UUID.to_owned(),
-                            HEART_RATE_SERVICE_UUID.to_owned()]),
-                        sender);
+                            HEART_RATE_SERVICE_UUID.to_owned()]));
 
                     // Generic Access Service
-                    let _generic_access_service = create_generic_access_service(&heart_rate_device, sender);
+                    let _generic_access_service = try!(create_generic_access_service(&heart_rate_device));
 
                     // Heart Rate Service
-                    let heart_rate_service_1 = create_service(&heart_rate_device,
-                                                              HEART_RATE_SERVICE_UUID.to_owned(),
-                                                              sender);
+                    let heart_rate_service_1 = try!(create_service(&heart_rate_device,
+                                                              HEART_RATE_SERVICE_UUID.to_owned()));
 
                     // Heart Rate Service
-                    let heart_rate_service_2 = create_service(&heart_rate_device,
-                                                              HEART_RATE_SERVICE_UUID.to_owned(),
-                                                              sender);
+                    let heart_rate_service_2 = try!(create_service(&heart_rate_device,
+                                                              HEART_RATE_SERVICE_UUID.to_owned()));
 
                     // Heart Rate Measurement Characteristic
                     let _heart_rate_measurement_characteristic =
-                        create_characteristic_with_value(&heart_rate_service_1,
+                        try!(create_characteristic_with_value(&heart_rate_service_1,
                                                          HEART_RATE_MEASUREMENT_CHARACTERISTIC_UUID.to_owned(),
-                                                         vec![3],
-                                                         sender);
+                                                         vec![3]));
 
                     // Body Sensor Location Characteristic 1
                     let _body_sensor_location_characteristic_1 =
-                        create_characteristic_with_value(&heart_rate_service_1,
+                        try!(create_characteristic_with_value(&heart_rate_service_1,
                                                          BODY_SENSOR_LOCATION_CHARACTERISTIC_UUID.to_owned(),
-                                                         vec![1],
-                                                         sender);
+                                                         vec![1]));
                     // Body Sensor Location Characteristic 2
                     let _body_sensor_location_characteristic_2 =
-                        create_characteristic_with_value(&heart_rate_service_2,
+                        try!(create_characteristic_with_value(&heart_rate_service_2,
                                                          BODY_SENSOR_LOCATION_CHARACTERISTIC_UUID.to_owned(),
-                                                         vec![2],
-                                                         sender);
+                                                         vec![2]));
                 },
                 BLACKLIST_TEST_ADAPTER => {
-                    set_adapter(adapter, BLACKLIST_TEST_ADAPTER.to_owned(), sender);
+                    try!(set_adapter(adapter, BLACKLIST_TEST_ADAPTER.to_owned()));
 
                     // Connectable Device
                     let connectable_device =
-                        create_device_with_uuids(adapter,
+                        try!(create_device_with_uuids(adapter,
                                                  CONNECTABLE_DEVICE_NAME.to_owned(),
                                                  CONNECTABLE_DEVICE_ADDRESS.to_owned(),
                                                  vec![BLACKLIST_TEST_SERVICE_UUID.to_owned(),
                                                       DEVICE_INFORMATION_UUID.to_owned(),
                                                       GENERIC_ACCESS_SERVICE_UUID.to_owned(),
                                                       HEART_RATE_SERVICE_UUID.to_owned(),
-                                                      HUMAN_INTERFACE_DEVICE_SERVICE_UUID.to_owned()],
-                                                 sender);
+                                                      HUMAN_INTERFACE_DEVICE_SERVICE_UUID.to_owned()]));
 
                     // Blacklist Test Service
                     let blacklist_test_service =
-                        create_service(&connectable_device,
-                                       BLACKLIST_TEST_SERVICE_UUID.to_owned(),
-                                       sender);
+                        try!(create_service(&connectable_device,
+                                       BLACKLIST_TEST_SERVICE_UUID.to_owned()));
 
                     // Blacklist Exclude Reads Characteristic
                     let blacklist_exclude_reads_characteristic =
-                        create_characteristic(&blacklist_test_service,
-                                              BLACKLIST_EXCLUDE_READS_CHARACTERISTIC_UUID.to_owned(),
-                                              sender);
-                    set_attribute_or_return_error(blacklist_exclude_reads_characteristic
-                                                  .set_flags(vec![READ_FLAG.to_string(), WRITE_FLAG.to_string()]),
-                                                  sender);
+                        try!(create_characteristic(&blacklist_test_service,
+                                              BLACKLIST_EXCLUDE_READS_CHARACTERISTIC_UUID.to_owned()));
+                    try!(blacklist_exclude_reads_characteristic
+                                                  .set_flags(vec![READ_FLAG.to_string(), WRITE_FLAG.to_string()]));
 
                     // Blacklist Exclude Reads Descriptor
                     let _blacklist_exclude_reads_descriptor =
-                        create_descriptor_with_value(&blacklist_exclude_reads_characteristic,
+                        try!(create_descriptor_with_value(&blacklist_exclude_reads_characteristic,
                                                      BLACKLIST_EXCLUDE_READS_DESCRIPTOR_UUID.to_owned(),
-                                                     vec![054, 054, 054],
-                                                     sender);
+                                                     vec![054, 054, 054]));
 
                     // Blacklist Descriptor
                     let _blacklist_descriptor =
-                        create_descriptor_with_value(&blacklist_exclude_reads_characteristic,
+                        try!(create_descriptor_with_value(&blacklist_exclude_reads_characteristic,
                                                      BLACKLIST_DESCRIPTOR_UUID.to_owned(),
-                                                     vec![054, 054, 054],
-                                                     sender);
+                                                     vec![054, 054, 054]));
 
                     // Device Information Service
                     let device_information_service =
-                        create_service(&connectable_device,
-                                       DEVICE_INFORMATION_UUID.to_owned(),
-                                       sender);
+                        try!(create_service(&connectable_device,
+                                       DEVICE_INFORMATION_UUID.to_owned()));
 
                     // Serial Number String Characteristic
                     let _serial_number_string_characteristic =
-                        create_characteristic(&device_information_service,
-                                              SERIAL_NUMBER_STRING_UUID.to_owned(),
-                                              sender);
+                        try!(create_characteristic(&device_information_service,
+                                              SERIAL_NUMBER_STRING_UUID.to_owned()));
 
                     // Generic Access Service
-                    let _generic_access_service = create_generic_access_service(&connectable_device, sender);
+                    let _generic_access_service = try!(create_generic_access_service(&connectable_device));
 
                     // Heart Rate Service
-                    let _heart_rate_service = create_heart_rate_service(&connectable_device, sender);
+                    let _heart_rate_service = try!(create_heart_rate_service(&connectable_device));
 
                     // Human Interface Device Service
                     let _human_interface_device_service =
-                        create_service(&connectable_device,
-                                       HUMAN_INTERFACE_DEVICE_SERVICE_UUID.to_owned(),
-                                       sender);
+                        try!(create_service(&connectable_device,
+                                       HUMAN_INTERFACE_DEVICE_SERVICE_UUID.to_owned()));
                 },
-                _ => return drop(sender.send(Err(BluetoothError::Type(WRONG_DATA_SET_ERROR.to_string())))),
+                _ => return Err(Box::from(WRONG_DATA_SET_ERROR.to_string())),
             }
         },
-        None => return drop(sender.send(Err(BluetoothError::Type(ADAPTER_ERROR.to_string())))),
+        None => return Err(Box::from(ADAPTER_ERROR.to_string())),
     }
-    return drop(sender.send(Ok(())));
+    return Ok(());
 }

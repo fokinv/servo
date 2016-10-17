@@ -71,15 +71,6 @@ macro_rules! get_adapter_or_return_error(
     );
 );
 
-macro_rules! set_attribute_or_return_error(
-    ($function:expr, $sender:expr) => (
-        match $function {
-            Ok(_) => (),
-            Err(_) => return drop($sender.send(Err(BluetoothError::Type(FAILED_SET_ERROR.to_string())))),
-        }
-    );
-);
-
 pub trait BluetoothThreadFactory {
     fn new() -> Self;
 }
@@ -305,7 +296,9 @@ impl BluetoothManager {
         self.cached_descriptors.clear();
         self.allowed_services.clear();
         self.adapter = BluetoothAdapter::init_mock().ok();
-        bluetooth_test::test(self, data_set_name, &sender);
+        if let Err(error) = bluetooth_test::test(self, data_set_name) {
+            return drop(sender.send(Err(BluetoothError::Type(error.description().to_owned()))));
+        }
     }
 
     // Adapter

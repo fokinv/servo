@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<title>GetDescriptor Test Cases</title>
+<body>
+    <button onclick="onButtonClick()">Test</button>
+    <pre id="log"></pre>
+    <script src="bluetooth_functions.js"></script>
+    <script>
+
+    function onButtonClick() {
+        clear();
+
+        log('Requesting Bluetooth Device...');
+        window.testRunner.setBluetoothMockDataSet("MissingDescriptorHeartRateAdapter");
+        return window.navigator.bluetooth.requestDevice({
+            filters: [{services: [heart_rate.name]}],
+            optionalServices: [generic_access.name]
+        })
+        .then(device => {
+            log('Connecting to GATTserver on device...');
+            return device.gatt.connect();
+        })
+        .then(server => {
+            log('Getting Primary Service "heart_rate"...');
+            return server.getPrimaryService('heart_rate');
+        })
+        .then(service => {
+
+            log('Getting Characteristic "heart_rate_measurement"...');
+            return service.getCharacteristic('heart_rate_measurement');
+        })
+        .then(characteristic => {
+            log('Getting Descriptor "' + testCases[testNumber] + '"...');
+            return characteristic.getDescriptor(testCases[testNumber]);
+        })
+        .then(descriptor => {
+            log('Descriptor found!');
+            log('> Descriptor characteristic: ' + descriptor.characteristic.uuid);
+            log('> Descriptor UUID:           ' + descriptor.uuid);
+            return descriptor.readValue();
+        })
+        .then(value => {
+            log('> Descriptor value:          ' + asciiToDecimal(value));
+        })
+        .catch(err => {
+            log(err);
+        });
+    }
+    </script>
+</body>
+</html>
